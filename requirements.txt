@@ -1,0 +1,13 @@
+torch
+transformers>=4.40.0
+sentence-transformers>=2.7.0
+accelerate
+bitsandbytes
+langchain
+langchain-community
+networkx
+scikit-learn
+pyyaml
+numpy
+pandas
+tqdm

@@ -1,0 +1,44 @@
+# Unified RAG Config
+
+model:
+  llm:
+    name: "Qwen/Qwen2.5-32B-Instruct"
+    load_in_4bit: true # Important for 80GB GPU to save VRAM
+    max_new_tokens: 1024
+    temperature: 0.1
+  embedding:
+    name: "BAAI/bge-m3"
+
+data:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  evaluation_dir: "data/evaluation"
+
+chunking:
+  chunk_size: 512
+  chunk_overlap: 50
+
+retrieval:
+  top_k: 10
+  hsg_rag:
+    semantic_iou_sim_threshold: 0.8
+    semantic_iou_threshold: 0.3
+    entity_link_sim_threshold: 0.9
+    entry_num: 7
+    max_depth: 3
+  cluster_rag:
+    k_min: 2
+    k_max: 12
+    delta_threshold: 0.02
+    min_clusters_to_stop: 8
+    max_levels: 6
+    seed: 0
+    hierarchical: true
+    N: 7
+    D: 3
+    k_leaf: 5
+    alpha: 0.7
+    use_sibling_expansion: false
+
+evaluation:
+  k_values: [5, 7, 10, 20]
