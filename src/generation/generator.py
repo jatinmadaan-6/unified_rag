@@ -4,12 +4,6 @@ All LLM generation goes through this module: question/answer generation
 merging, context-only answering (for the round-trip check), and
 entailment judging.
 
-100% free, local, Colab-compatible — runs on HuggingFace `transformers`
-and supports the same interchangeable free models as before:
-
-  - "Qwen/Qwen2.5-3B-Instruct"            (default)
-  - "mistralai/Mistral-7B-Instruct-v0.3"  (pass load_in_4bit=True on a T4)
-  - "google/flan-t5-base"                 (smallest memory footprint)
 
 CHANGE LOG (adaptation for Cluster-RAG benchmark generation):
   - generate_from_cluster() replaces per-chunk generation as the primary
@@ -44,22 +38,46 @@ logger = logging.getLogger(__name__)
 
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 _JSON_OBJ_RE = re.compile(r"\{.*?\}", re.DOTALL)
+_PLACEHOLDER_ANSWERS = {"...", "}", "{", "null", "none"}
+
+
+def _is_usable_qa(data: dict) -> bool:
+    """Reject incomplete schema echoes before they enter the QA dataset."""
+    question = data.get("question")
+    answer = data.get("answer")
+    return (
+        isinstance(question, str) and len(question.strip()) >= 10
+        and isinstance(answer, str) and len(answer.strip()) >= 10
+        and answer.strip().casefold() not in _PLACEHOLDER_ANSWERS
+    )
 
 
 def _extract_json(text: str) -> dict:
     """Best-effort JSON extraction. Local models are less reliable than a
     hosted API at strictly following 'JSON only' instructions, so this is
     a little more forgiving: it tries a fenced block first, then the raw
-    text, then the first {...} blob it can find."""
+    text, then the outer {...} boundaries, then the first {...} blob."""
     fence = _JSON_FENCE_RE.search(text)
-    payload = fence.group(1) if fence else text
+    payload = fence.group(1).strip() if fence else text.strip()
     try:
         return json.loads(payload)
     except json.JSONDecodeError:
-        m = _JSON_OBJ_RE.search(payload)
-        if m:
-            return json.loads(m.group(0))
-        raise
+        pass
+
+    # Try outer-most JSON object bounds
+    first_brace = payload.find("{")
+    last_brace = payload.rfind("}")
+    if first_brace != -1 and last_brace > first_brace:
+        sub = payload[first_brace : last_brace + 1]
+        try:
+            return json.loads(sub)
+        except json.JSONDecodeError:
+            pass
+
+    m = _JSON_OBJ_RE.search(payload)
+    if m:
+        return json.loads(m.group(0))
+    raise json.JSONDecodeError("Could not extract JSON", text, 0)
 
 
 class QAGenerator:
@@ -161,11 +179,12 @@ class QAGenerator:
         most informative chunks), not a single chunk."""
         system = (
             "You generate evaluation questions for a RAG (retrieval-augmented generation) "
-            "system. The passage below represents ONE semantic topic (a cluster), built by "
+            "system. You MUST provide both a clear technical question and a complete, "
+            "accurate reference answer. The passage below represents ONE semantic topic (a cluster), built by "
             "concatenating the most relevant passages of that topic. Ground the question "
             "strictly in this passage, and write it the way a real user would naturally "
             "phrase it — avoid template-like or repetitive phrasing. Respond with ONLY a "
-            "JSON object: {\"question\": \"...\", \"answer\": \"...\"} or {\"skip\": true} "
+            "JSON object: {\"question\": \"<question text>\", \"answer\": \"<detailed answer text>\"} or {\"skip\": true} "
             "if the instruction cannot be satisfied by this passage. No prose, no markdown."
         )
         user = f"Instruction: {type_instruction}\n\nTopic passage:\n{cluster_text}"
@@ -177,7 +196,7 @@ class QAGenerator:
             return None
         if data.get("skip"):
             return None
-        if "question" in data and "answer" in data:
+        if _is_usable_qa(data):
             return data
         return None
 
@@ -187,8 +206,9 @@ class QAGenerator:
         pipeline itself now goes through generate_from_cluster()."""
         system = (
             "You generate evaluation questions for a RAG (retrieval-augmented generation) "
-            "system, strictly grounded in the provided passage. Respond with ONLY a JSON "
-            "object: {\"question\": \"...\", \"answer\": \"...\"} or {\"skip\": true} if "
+            "system, strictly grounded in the provided passage. You MUST provide both a "
+            "clear technical question and a complete, accurate reference answer. Respond with ONLY a JSON "
+            "object: {\"question\": \"<question text>\", \"answer\": \"<detailed answer text>\"} or {\"skip\": true} if "
             "the instruction cannot be satisfied by this passage. No prose, no markdown."
         )
         user = f"Instruction: {type_instruction}\n\nPassage:\n{chunk_text}"
@@ -200,7 +220,7 @@ class QAGenerator:
             return None
         if data.get("skip"):
             return None
-        if "question" in data and "answer" in data:
+        if _is_usable_qa(data):
             return data
         return None
 
@@ -211,8 +231,9 @@ class QAGenerator:
         giving the LLM more material to build a genuine reasoning question
         from than a single representative chunk per side."""
         system = (
-            "You generate multi-hop evaluation questions for a RAG system. Respond with "
-            "ONLY a JSON object: {\"question\": \"...\", \"answer\": \"...\"}. No prose."
+            "You generate multi-hop evaluation questions for a RAG system. You MUST provide "
+            "both a clear technical question and a complete, accurate reference answer. Respond with "
+            "ONLY a JSON object: {\"question\": \"<question text>\", \"answer\": \"<detailed answer text>\"}. No prose."
         )
         passage_a = "\n\n".join(t for t in texts_a if t.strip())
         passage_b = "\n\n".join(t for t in texts_b if t.strip())
@@ -222,7 +243,7 @@ class QAGenerator:
             data = _extract_json(raw)
         except (json.JSONDecodeError, AttributeError):
             return None
-        if "question" in data and "answer" in data:
+        if _is_usable_qa(data):
             return data
         return None
 
@@ -270,7 +291,7 @@ class QAGenerator:
             data = _extract_json(raw)
         except (json.JSONDecodeError, AttributeError):
             return None
-        return data if "question" in data and "answer" in data else None
+        return data if _is_usable_qa(data) else None
 
     # ---------- round-trip check (deterministic — QC, not creative generation) ----------
     def answer_from_context(self, question: str, context_chunks: List[str]) -> str:

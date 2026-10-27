@@ -106,10 +106,10 @@ class Config:
     dedup_similarity_threshold: float = 0.93   # cosine similarity above which a question is a duplicate
 
     # --- Round-trip / quality filtering ---
-    retrieval_top_k: int = 3
-    answer_similarity_threshold: float = 0.72   # cosine sim between generated vs reference answer
+    retrieval_top_k: int = 6
+    answer_similarity_threshold: float = 0.58   # calibrated for technical answers and MiniLM embeddings
     use_llm_judge_for_borderline: bool = True
-    borderline_band: float = 0.08   # if sim within [threshold-band, threshold+band], ask the LLM judge
+    borderline_band: float = 0.12   # if sim within [threshold-band, threshold+band], ask the LLM judge
 
     # --- Target dataset size ---
     # Keep generating cluster-based + multi-hop rounds until ~this many

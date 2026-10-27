@@ -70,6 +70,23 @@ class RecursiveKMeansIndexer:
         for c, emb in zip(chunks, chunk_embeddings):
             tree.add_chunk(c["unit_id"], c["text"], emb)
 
+        # Keep tiny documents retrievable: the normal loop deliberately avoids
+        # K-Means when there are too few samples, so materialize one leaf node.
+        if len(chunks) <= self.min_clusters_to_stop:
+            root_id = f"{doc_id}_L1_C00_{uuid.uuid4().hex[:6]}"
+            root = ClusterNode(
+                cluster_id=root_id, level=1, doc_id=doc_id,
+                centroid_embedding=np.mean(chunk_embeddings, axis=0).tolist(),
+                member_chunk_ids=[c["unit_id"] for c in chunks],
+            )
+            if self.summarizer is not None:
+                root.summary, root.keywords = self.summarizer.summarize_cluster(
+                    [c["text"] for c in chunks], is_leaf=True
+                )
+            tree.add_node(root, is_root=True)
+            tree.level_k_report = [{"level": 1, "k": 1, "n_items": len(chunks)}]
+            return tree
+
         # Level 0 nodes: one cluster per chunk conceptually, but we start clustering
         # directly on leaf embeddings to form level-1 leaf clusters.
         level = 1
@@ -130,7 +147,7 @@ class RecursiveKMeansIndexer:
             current_ids, current_embs = new_ids, np.vstack(new_embs)
             current_is_chunk_level = False
 
-            if k <= self.min_clusters_to_stop:
+            if not hierarchical or k <= self.min_clusters_to_stop:
                 level += 1
                 break
             level += 1

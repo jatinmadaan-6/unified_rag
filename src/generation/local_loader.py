@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import logging
 import os
-import uuid
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
@@ -105,7 +104,9 @@ def load_document(path: str, relative_path: str) -> Optional[Document]:
         return None
 
     return Document(
-        doc_id=str(uuid.uuid4())[:8],
+        # Match the evaluation loader's stable document identity.  Random IDs
+        # make supporting_chunk_ids impossible to compare after re-indexing.
+        doc_id=os.path.splitext(os.path.basename(path))[0],
         title=os.path.basename(path),
         text=text,
         mime_type=mime,

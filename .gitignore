@@ -1,0 +1,8 @@
+# Python-generated files
+__pycache__/
+*.py[cod]
+
+# Experiment outputs are reproducible and can be large.
+results.json
+data/processed/
+data/evaluation/*.jsonl

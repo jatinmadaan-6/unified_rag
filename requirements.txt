@@ -5,9 +5,14 @@ accelerate
 bitsandbytes
 langchain
 langchain-community
+langchain-text-splitters
 networkx
 scikit-learn
 pyyaml
 numpy
 pandas
 tqdm
+pypdf
+cryptography
+yake
+

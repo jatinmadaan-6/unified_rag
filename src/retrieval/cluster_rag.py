@@ -5,6 +5,7 @@ from typing import List, Dict, Any
 from src.retrieval.base import BaseRetriever
 from src.retrieval.cluster_utils.recursive_kmeans import RecursiveKMeansIndexer
 from src.retrieval.cluster_utils.tree import ClusterTree
+from src.retrieval.cluster_utils.summarizer import ClusterSummarizer
 from src.utils.prompts import QUERY_DECOMPOSITION_PROMPT
 
 class ClusterRAG(BaseRetriever):
@@ -20,13 +21,15 @@ class ClusterRAG(BaseRetriever):
         for c in chunks:
             docs.setdefault(c["doc_id"], []).append(c)
             
+        summarizer = ClusterSummarizer(self.llm) if self.config.get("summarize_clusters", True) else None
         indexer = RecursiveKMeansIndexer(
             k_min=self.config.get("k_min", 2),
             k_max=self.config.get("k_max", 12),
             delta_threshold=self.config.get("delta_threshold", 0.02),
             min_clusters_to_stop=self.config.get("min_clusters_to_stop", 8),
             max_levels=self.config.get("max_levels", 6),
-            seed=self.config.get("seed", 0)
+            seed=self.config.get("seed", 0),
+            summarizer=summarizer,
         )
         
         hierarchical = self.config.get("hierarchical", True)

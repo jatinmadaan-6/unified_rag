@@ -1,13 +1,13 @@
 # Unified RAG Config
-
 model:
   llm:
-    name: "Qwen/Qwen2.5-32B-Instruct"
-    load_in_4bit: true # Important for 80GB GPU to save VRAM
-    max_new_tokens: 1024
+    name: "Qwen/Qwen2.5-3B-Instruct"
+    load_in_4bit: false
+    max_new_tokens: 512
     temperature: 0.1
+
   embedding:
-    name: "BAAI/bge-m3"
+    name: "BAAI/bge-small-en-v1.5"
 
 data:
   raw_dir: "data/raw"
@@ -20,6 +20,14 @@ chunking:
 
 retrieval:
   top_k: 10
+  raptor:
+    # Local RAPTOR-style baseline: bottom-up summary nodes + collapsed-tree retrieval.
+    # It uses K-Means, not RAPTOR's original UMAP + GMM implementation.
+    branch_factor: 5
+    max_levels: 3
+    min_nodes_to_cluster: 8
+    retrieval_node_k: 10
+    seed: 0
   hsg_rag:
     semantic_iou_sim_threshold: 0.8
     semantic_iou_threshold: 0.3
@@ -28,17 +36,34 @@ retrieval:
     max_depth: 3
   cluster_rag:
     k_min: 2
-    k_max: 12
+    k_max: 5
     delta_threshold: 0.02
-    min_clusters_to_stop: 8
-    max_levels: 6
+    min_clusters_to_stop: 3
+    max_levels: 3
     seed: 0
     hierarchical: true
     N: 7
     D: 3
     k_leaf: 5
     alpha: 0.7
+    use_sibling_expansion: true
+    summarize_clusters: true
+
+  flat_cluster_rag:
+    k_min: 2
+    k_max: 5
+    delta_threshold: 0.02
+    seed: 0
+    hierarchical: false
+    N: 7
+    D: 1
+    k_leaf: 5
+    alpha: 1.0
     use_sibling_expansion: false
+    summarize_clusters: false
 
 evaluation:
   k_values: [5, 7, 10, 20]
+  evaluate_answers: true
+  max_answer_questions: 100
+  answer_max_new_tokens: 384

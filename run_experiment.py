@@ -1,128 +1,141 @@
+"""Reproducible, fully local evaluation for the unified RAG framework."""
 import argparse
-import yaml
-import time
+import copy
 import json
+import time
 import tracemalloc
-from typing import Dict, Any
+from collections import defaultdict
+from pathlib import Path
 
-from src.ingestion.local_loader import load_local_documents
+import yaml
+
 from src.chunking.chunker import chunk_documents
 from src.embeddings.embedder import get_embedder
+from src.evaluation.metrics import aggregate_pairwise_judgments, calculate_ranking_metrics, evaluate_response_llm_as_judge, mean_metrics
+from src.ingestion.local_loader import load_local_documents
 from src.llm.generator import get_llm
-from src.retrieval.vanilla_rag import VanillaRAG
-from src.retrieval.hsg_rag import HSGRAG
 from src.retrieval.cluster_rag import ClusterRAG
-from src.evaluation.metrics import calculate_recall_at_k, evaluate_response_llm_as_judge
+from src.retrieval.hsg_rag import HSGRAG
+from src.retrieval.raptor_rag import RaptorRAG
+from src.retrieval.vanilla_rag import VanillaRAG
 from src.utils.prompts import ANSWER_PROMPT
 
-def load_config(path="configs/config.yaml") -> Dict[str, Any]:
-    with open(path) as f:
-        return yaml.safe_load(f)
+METHODS = ("vanilla", "raptor", "hsg", "flat_cluster", "cluster", "cluster_no_siblings")
 
-def format_table(results):
-    print(f"\n{'='*80}")
-    print(f"{'Method':<15} | {'Recall@5':<10} | {'Recall@7':<10} | {'Recall@10':<10} | {'Recall@20':<10}")
-    print(f"{'-'*80}")
-    for method, res in results.items():
-        r = res.get('retrieval', {})
-        print(f"{method:<15} | {r.get('R@5', 0):<10.4f} | {r.get('R@7', 0):<10.4f} | {r.get('R@10', 0):<10.4f} | {r.get('R@20', 0):<10.4f}")
-    
-    print(f"\n{'='*80}")
-    print(f"{'Method':<15} | {'Index Time (s)':<15} | {'Memory (MB)':<15} | {'Complexity (approx)':<20}")
-    print(f"{'-'*80}")
-    for method, res in results.items():
-        eff = res.get('efficiency', {})
-        print(f"{method:<15} | {eff.get('index_time_sec', 0):<15.2f} | {eff.get('peak_memory_mb', 0):<15.2f} | {eff.get('complexity', 'O(N)'):<20}")
-    print(f"{'='*80}\n")
+
+def load_config(path):
+    with open(path, encoding="utf-8") as stream:
+        return yaml.safe_load(stream)
+
+
+def load_qa_pairs(path):
+    with open(path, encoding="utf-8") as stream:
+        return [json.loads(line) for line in stream if line.strip()]
+
+
+def qa_slice(qa):
+    hop = qa.get("hop_count")
+    hop_label = f"{hop}_hop" if hop is not None else ("multi_hop" if qa.get("cross_cluster") else "single_hop")
+    return {"hop": hop_label, "question_type": qa.get("question_type", "unknown"), "difficulty": qa.get("difficulty", "unknown")}
+
+
+def build_retriever(method, llm, embedder, cfg):
+    if method == "vanilla":
+        return VanillaRAG(embedder), "O(N)"
+    if method == "hsg":
+        return HSGRAG(llm, embedder, cfg["retrieval"]["hsg_rag"]), "O(V + E) per document"
+    if method == "raptor":
+        return RaptorRAG(llm, embedder, cfg["retrieval"]["raptor"]), "Recursive summary-tree indexing"
+    if method == "flat_cluster":
+        return ClusterRAG(llm, embedder, cfg["retrieval"]["flat_cluster_rag"]), "O(NK) flat clustering"
+    cluster_cfg = copy.deepcopy(cfg["retrieval"]["cluster_rag"])
+    if method == "cluster_no_siblings":
+        cluster_cfg["use_sibling_expansion"] = False
+    return ClusterRAG(llm, embedder, cluster_cfg), "O(N log K) hierarchical clustering"
+
+
+def answer_question(llm, question, retrieved, max_new_tokens):
+    context = "\n\n---\n\n".join(item["text"] for item in retrieved)
+    return llm.generate(ANSWER_PROMPT.format(context=context, question=question), max_new_tokens=max_new_tokens)
+
+
+def format_table(results, k_values):
+    header = " | ".join(["Method"] + [f"R@{k}" for k in k_values] + ["MRR", "nDCG@10", "Query ms", "Index s"])
+    print("\n" + header + "\n" + "-" * len(header))
+    for method, result in results.items():
+        retrieval, efficiency = result.get("retrieval", {}), result.get("efficiency", {})
+        ndcg = retrieval.get("nDCG@10", retrieval.get(f"nDCG@{k_values[-1]}", 0))
+        cells = [method] + [f"{retrieval.get(f'R@{k}', 0):.4f}" for k in k_values]
+        cells += [f"{retrieval.get('MRR', 0):.4f}", f"{ndcg:.4f}", f"{efficiency.get('mean_query_latency_ms', 0):.2f}", f"{efficiency.get('index_time_sec', 0):.2f}"]
+        print(" | ".join(cells))
+
 
 def main():
-    parser = argparse.ArgumentParser(description="Unified RAG Evaluation Framework")
-    parser.add_argument("--method", type=str, choices=["vanilla", "hsg", "cluster", "all"], default="all")
-    parser.add_argument("--config", type=str, default="configs/config.yaml")
-    parser.add_argument("--qa_dataset", type=str, help="Path to QA dataset JSONL", required=True)
+    parser = argparse.ArgumentParser(description="Fully local Unified RAG evaluation; no API key required.")
+    parser.add_argument("--method", choices=[*METHODS, "all"], default="all")
+    parser.add_argument("--config", default="configs/config.yaml")
+    parser.add_argument("--qa_dataset", required=True)
+    parser.add_argument("--results", default="results.json")
+    parser.add_argument("--skip_answers", action="store_true", help="Run retrieval and efficiency metrics only.")
     args = parser.parse_args()
 
-    cfg = load_config(args.config)
-    
-    # 1. Load Data
-    print("Loading documents...")
-    docs = load_local_documents(cfg['data']['raw_dir'])
-    chunks = chunk_documents(docs, chunk_size=cfg['chunking']['chunk_size'], chunk_overlap=cfg['chunking']['chunk_overlap'])
-    print(f"Loaded {len(docs)} documents, chunked into {len(chunks)} units.")
+    cfg, qa_pairs = load_config(args.config), load_qa_pairs(args.qa_dataset)
+    docs = load_local_documents(cfg["data"]["raw_dir"])
+    chunks = chunk_documents(docs, cfg["chunking"]["chunk_size"], cfg["chunking"]["chunk_overlap"])
+    if not docs or not qa_pairs:
+        raise ValueError("Both raw documents and a non-empty QA JSONL dataset are required.")
+    print(f"Loaded {len(docs)} documents, {len(chunks)} chunks, and {len(qa_pairs)} QA pairs.")
+    selected = list(METHODS) if args.method == "all" else [args.method]
+    embedder = get_embedder(cfg["model"]["embedding"]["name"])
+    needs_llm = any(method != "vanilla" for method in selected) or (cfg["evaluation"].get("evaluate_answers", True) and not args.skip_answers)
+    llm = get_llm(cfg["model"]["llm"]["name"], cfg["model"]["llm"]["load_in_4bit"]) if needs_llm else None
+    k_values, max_k = cfg["evaluation"]["k_values"], max(cfg["evaluation"]["k_values"])
+    results, answers = {}, defaultdict(dict)
 
-    # 2. Init Models
-    print("Initializing local models...")
-    embedder = get_embedder(cfg['model']['embedding']['name'])
-    llm = get_llm(cfg['model']['llm']['name'], cfg['model']['llm']['load_in_4bit'])
-
-    methods_to_run = ["vanilla", "hsg", "cluster"] if args.method == "all" else [args.method]
-    results = {}
-
-    for method in methods_to_run:
-        print(f"\n--- Running {method.upper()} RAG ---")
-        tracemalloc.start()
-        start_time = time.time()
-        
-        if method == "vanilla":
-            retriever = VanillaRAG(embedder)
-            complexity = "O(N)"
-        elif method == "hsg":
-            retriever = HSGRAG(llm, embedder, cfg['retrieval']['hsg_rag'])
-            complexity = "O(V + E) per doc"
-        elif method == "cluster":
-            retriever = ClusterRAG(llm, embedder, cfg['retrieval']['cluster_rag'])
-            complexity = "O(N log K)"
-            
-        print("Indexing...")
+    for method in selected:
+        print(f"\n--- {method} ---")
+        retriever, complexity = build_retriever(method, llm, embedder, cfg)
+        tracemalloc.start(); started = time.perf_counter()
         retriever.index(chunks)
-        index_time = time.time() - start_time
-        
-        current, peak = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
-        
-        results[method] = {
-            "efficiency": {
-                "index_time_sec": index_time,
-                "peak_memory_mb": peak / 10**6,
-                "complexity": complexity
-            }
-        }
-        print(f"Indexed in {index_time:.2f}s (Peak Memory: {peak / 10**6:.2f}MB)")
+        index_time = time.perf_counter() - started
+        _, peak = tracemalloc.get_traced_memory(); tracemalloc.stop()
+        rows, by_slice, latencies, answer_inputs = [], defaultdict(list), [], []
+        for qa in qa_pairs:
+            gold = set(qa.get("supporting_chunk_ids") or qa.get("chunk_ids", []))
+            if not gold:
+                continue
+            started = time.perf_counter()
+            retrieved = retriever.retrieve(qa.get("question", ""), top_k=max_k)
+            latencies.append((time.perf_counter() - started) * 1000)
+            row = calculate_ranking_metrics([item["unit_id"] for item in retrieved], gold, k_values)
+            rows.append(row)
+            for dimension, value in qa_slice(qa).items():
+                by_slice[f"{dimension}:{value}"].append(row)
+            answer_inputs.append((qa, retrieved))
+        results[method] = {"retrieval": mean_metrics(rows), "slices": {label: mean_metrics(values) for label, values in sorted(by_slice.items())}, "efficiency": {"index_time_sec": index_time, "peak_memory_mb": peak / 1_000_000, "mean_query_latency_ms": sum(latencies) / max(len(latencies), 1), "p95_query_latency_ms": sorted(latencies)[max(0, int(len(latencies) * .95) - 1)] if latencies else 0.0, "complexity": complexity}}
+        if cfg["evaluation"].get("evaluate_answers", True) and not args.skip_answers:
+            for qa, retrieved in answer_inputs[:cfg["evaluation"].get("max_answer_questions", 100)]:
+                answers[qa.get("id", qa["question"])][method] = answer_question(llm, qa["question"], retrieved, cfg["evaluation"].get("answer_max_new_tokens", 384))
 
-        # Load QA Dataset and Evaluate Retrieval
-        print("Evaluating Retrieval...")
-        try:
-            with open(args.qa_dataset, 'r') as f:
-                qa_pairs = [json.loads(line) for line in f]
-        except Exception as e:
-            print(f"Failed to load QA dataset: {e}. Skipping retrieval eval.")
-            continue
-            
-        k_values = cfg['evaluation']['k_values']
-        all_hits = {f"R@{k}": [] for k in k_values}
-        
-        for idx, qa in enumerate(qa_pairs):
-            query = qa.get("question", "")
-            gold_units = set(qa.get("chunk_ids", []))
-            
-            if not gold_units: continue
-            
-            retrieved = retriever.retrieve(query, top_k=max(k_values))
-            retrieved_ids = [r["unit_id"] for r in retrieved]
-            
-            recall_dict = calculate_recall_at_k(retrieved_ids, gold_units, k_values)
-            for k in k_values:
-                all_hits[f"R@{k}"].append(recall_dict[f"R@{k}"])
-                
-        results[method]["retrieval"] = {k: sum(v)/len(v) if v else 0.0 for k, v in all_hits.items()}
-        print(f"Retrieval Results for {method}: {results[method]['retrieval']}")
+    if answers and len(selected) > 1:
+        for method_a in selected:
+            comparisons = {}
+            for method_b in selected:
+                if method_a == method_b:
+                    continue
+                judgments = []
+                for qa in qa_pairs:
+                    key = qa.get("id", qa["question"])
+                    if method_a in answers[key] and method_b in answers[key]:
+                        judgments.append(evaluate_response_llm_as_judge(llm, qa["question"], qa.get("reference_answer", ""), answers[key][method_a], answers[key][method_b]))
+                comparisons[f"vs_{method_b}"] = aggregate_pairwise_judgments(judgments)
+            results[method_a]["answer_quality"] = comparisons
+    results["local_model_usage"] = llm.stats_snapshot() if llm is not None else {"calls": 0, "note": "No LLM was needed for this run."}
+    results["metadata"] = {"qa_pairs": len(qa_pairs), "methods": selected, "hosted_api_required": False}
+    format_table({method: results[method] for method in selected}, k_values)
+    Path(args.results).write_text(json.dumps(results, indent=2), encoding="utf-8")
+    print(f"Saved full results to {args.results}")
 
-    format_table(results)
-    
-    # Save results
-    with open("results.json", "w") as f:
-        json.dump(results, f, indent=4)
-    print("\nResults saved to results.json")
 
 if __name__ == "__main__":
     main()

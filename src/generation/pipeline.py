@@ -1,15 +1,4 @@
 """
-End-to-end orchestrator for the Cluster-RAG benchmark — 100% free, Google
-Colab compatible.
-
-Usage (Colab or local):
-    python pipeline.py --folder "/content/drive/MyDrive/RAG_DATASET" \
-                        --output qa_pairs.jsonl
-
-Or just edit DATA_FOLDER / OUTPUT_FILE at the top of config.py and run
-`python pipeline.py` with no arguments.
-
-No API keys. No credentials files. No paid services.
 
 Pipeline stages:
   1. local_loader   -> read files straight off disk / mounted Drive folder      [unchanged]

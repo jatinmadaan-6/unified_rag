@@ -2,7 +2,7 @@
 
 This repository contains the codebase for evaluating embedding-based Cluster-RAG against Vanilla RAG and HSG-RAG. 
 
-The framework is completely local and does not require paid API keys. It uses HuggingFace models for language generation/extraction and `sentence-transformers` for embeddings.
+The framework is completely local and does not require paid API keys or an `OPENAI_API_KEY`. It uses Hugging Face models for generation, local LLM judging, and HSG-style extraction, plus `sentence-transformers` for embeddings.
 
 ## Requirements
 
@@ -27,17 +27,25 @@ python src/generation/pipeline.py --folder data/raw --output data/evaluation/qa_
 ```
 
 ### 2. Running Experiments
-Run the unified evaluation pipeline which will index documents, perform retrieval across the different methods, calculate Recall@k, and generate a comparison table.
+Run the unified evaluation pipeline. By default it compares Vanilla RAG, a local RAPTOR-style recursive summary-tree baseline, HSG-RAG, flat clustering, hierarchical Cluster-RAG, and Cluster-RAG without sibling expansion.
 
 ```bash
 python run_experiment.py --method all --qa_dataset data/evaluation/qa_pairs.jsonl
+```
+
+For a quick retrieval-only pass (skips local answer generation and LLM judging):
+
+```bash
+python run_experiment.py --method all --qa_dataset data/evaluation/qa_pairs.jsonl --skip_answers
 ```
 
 You can also run specific methods:
 ```bash
 python run_experiment.py --method hsg --qa_dataset data/evaluation/qa_pairs.jsonl
 ```
-Valid methods: `vanilla`, `hsg`, `cluster`, `all`.
+Valid methods: `vanilla`, `raptor`, `hsg`, `flat_cluster`, `cluster`, `cluster_no_siblings`, `all`.
+
+The `raptor` method is an in-repository RAPTOR-style baseline: it recursively clusters chunks, summarizes and re-embeds each cluster, then performs collapsed-tree retrieval before returning original leaf evidence. It is not represented as the authors' exact UMAP+GMM implementation; retain that distinction in any paper.
 
 ## Results
-The experiment script outputs a table comparing the methods and saves detailed metrics to `results.json`.
+The experiment script outputs a table and saves detailed metrics to `results.json`: Recall@k, Precision@k, Hit@k, MRR, nDCG@k, mean/p95 query latency, indexing time, tracked peak memory, and QA slices by hop label, question type, and difficulty. When answer evaluation is enabled, it also runs local pairwise LLM judging for specificity, conciseness, and completeness. `results.json` records local model call/token/time totals; it does not estimate API cost because no hosted API is used.

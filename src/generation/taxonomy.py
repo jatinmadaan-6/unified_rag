@@ -44,8 +44,9 @@ TAXONOMY = {
     "factual": QuestionType(
         name="factual",
         instruction=(
-            "Write a single factual/definitional question that can be answered directly "
-            "and unambiguously from this topic passage. Avoid yes/no questions."
+            "Write a single factual/definitional technical question that can be answered directly "
+            "and unambiguously from this topic passage (avoid yes/no questions), AND provide a "
+            "clear, factual reference answer grounded strictly in the passage."
         ),
         applies=lambda text: True,
     ),
@@ -53,7 +54,8 @@ TAXONOMY = {
         name="definition",
         instruction=(
             "Write a question asking for the definition or meaning of a key term, "
-            "concept, or role introduced in this topic passage."
+            "concept, or role introduced in this topic passage, AND provide the complete, "
+            "accurate definition as the reference answer."
         ),
         applies=lambda text: bool(_DEFINITION_KW.search(text)),
     ),
@@ -61,17 +63,18 @@ TAXONOMY = {
         name="explanation",
         instruction=(
             "Write a 'why' or 'how' question that requires explaining a mechanism, "
-            "rationale, or reasoning described in this topic passage, not just "
-            "restating a fact. If the passage gives no rationale to explain, respond "
-            "with SKIP."
+            "rationale, or reasoning described in this topic passage, AND provide a detailed "
+            "reference answer explaining it directly from the text. If the passage gives "
+            "no rationale to explain, respond with SKIP."
         ),
         applies=lambda text: True,  # left to the LLM's SKIP escape hatch
     ),
     "procedure": QuestionType(
         name="procedure",
         instruction=(
-            "Write a question about the steps, sequence, or process someone must follow, "
-            "as described in this topic passage."
+            "Write a question about the steps, sequence, or process someone must follow "
+            "as described in this topic passage, AND provide the step-by-step procedure as the "
+            "reference answer."
         ),
         applies=lambda text: bool(_PROCEDURE_KW.search(text)),
     ),
@@ -79,18 +82,18 @@ TAXONOMY = {
         name="comparison",
         instruction=(
             "Write a question that asks the reader to compare or contrast two things, "
-            "concepts, or entities mentioned in this topic passage. Only do this if the "
-            "passage actually contains two or more comparable items; otherwise respond "
-            "with SKIP."
+            "concepts, or modes mentioned in this topic passage, AND provide a comparative "
+            "reference answer based on the passage. Only do this if the passage contains "
+            "two or more comparable items; otherwise respond with SKIP."
         ),
         applies=lambda text: True,  # left to the LLM's SKIP escape hatch
     ),
     "constraint": QuestionType(
         name="constraint",
         instruction=(
-            "Write a question about a rule, limit, requirement, or eligibility condition "
-            "stated in this topic passage (e.g. what is required, a minimum/maximum, or "
-            "who is eligible)."
+            "Write a question about a rule, limit, electrical/timing requirement, or eligibility "
+            "condition stated in this topic passage (e.g. what is required, a minimum/maximum value), "
+            "AND provide the exact limit or requirement as the reference answer."
         ),
         applies=lambda text: bool(_CONSTRAINT_KW.search(text)),
     ),
@@ -98,7 +101,8 @@ TAXONOMY = {
         name="exception",
         instruction=(
             "Write a question about an exception, special case, or condition under which "
-            "the usual rule described in this topic passage does NOT apply."
+            "the usual rule described in this topic passage does NOT apply, AND provide the "
+            "reference answer explaining that exception."
         ),
         applies=lambda text: bool(_EXCEPTION_KW.search(text)),
     ),
@@ -106,16 +110,17 @@ TAXONOMY = {
         name="scenario",
         instruction=(
             "Write a realistic scenario-based question describing a concrete situation a "
-            "student or staff member might face, whose resolution depends on this topic "
-            "passage."
+            "developer or engineer might face, whose resolution depends on this topic "
+            "passage, AND provide the correct engineering solution/answer."
         ),
         applies=lambda text: True,
     ),
     "troubleshooting": QuestionType(
         name="troubleshooting",
         instruction=(
-            "Write a question about what to do, or who to contact, if something goes "
-            "wrong or a problem arises, based on this topic passage."
+            "Write a question about what to do, how to diagnose, or how to resolve an issue "
+            "or error based on this topic passage, AND provide the troubleshooting steps or "
+            "cause as the reference answer."
         ),
         applies=lambda text: bool(_TROUBLESHOOT_KW.search(text)),
     ),
@@ -123,8 +128,9 @@ TAXONOMY = {
         name="cause_effect",
         instruction=(
             "Write a 'why' or 'what causes/leads to' question whose answer is a cause, "
-            "reason, or consequence explained in this topic passage. If the passage "
-            "describes no cause-effect relationship, respond with SKIP."
+            "reason, or consequence explained in this topic passage, AND provide that cause "
+            "or consequence as the reference answer. If the passage describes no cause-effect "
+            "relationship, respond with SKIP."
         ),
         applies=lambda text: True,  # left to the LLM's SKIP escape hatch, mirrors original "causal"
     ),
@@ -133,7 +139,7 @@ TAXONOMY = {
         instruction=(
             "Write a question about a dependency or prerequisite relationship — what must "
             "be true, completed, or in place before something else described in this "
-            "topic passage can happen."
+            "topic passage can happen, AND provide the required prerequisites as the reference answer."
         ),
         applies=lambda text: bool(_DEPENDENCY_KW.search(text)),
     ),
@@ -141,8 +147,8 @@ TAXONOMY = {
         name="synthesis",
         instruction=(
             "Write a question that requires synthesizing two or more separate pieces of "
-            "information from across this topic passage into a single coherent answer — "
-            "not something answerable from one sentence alone."
+            "information from across this topic passage, AND provide the comprehensive, "
+            "synthesized reference answer."
         ),
         applies=lambda text: True,
     ),

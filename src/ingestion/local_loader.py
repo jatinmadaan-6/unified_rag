@@ -1,10 +1,15 @@
 import os
 from typing import List, Dict
 
+
+def _read_pdf(path: str) -> str:
+    from pypdf import PdfReader
+    return "\n\n".join(page.extract_text() or "" for page in PdfReader(path).pages)
+
 def load_local_documents(folder: str, recursive: bool = True, supported_extensions: List[str] = None) -> List[Dict]:
     """Loads documents from a folder into a list of dicts: {'doc_id': str, 'text': str, 'path': str}"""
     if supported_extensions is None:
-        supported_extensions = [".txt", ".md"]
+        supported_extensions = [".txt", ".md", ".pdf"]
         
     documents = []
     
@@ -19,8 +24,11 @@ def load_local_documents(folder: str, recursive: bool = True, supported_extensio
                 path = os.path.join(root, file)
                 doc_id = os.path.splitext(file)[0]
                 try:
-                    with open(path, "r", encoding="utf-8", errors="ignore") as f:
-                        text = f.read()
+                    if ext == ".pdf":
+                        text = _read_pdf(path)
+                    else:
+                        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                            text = f.read()
                     documents.append({
                         "doc_id": doc_id,
                         "text": text,

@@ -479,8 +479,8 @@ def deduplicate_pairs(pairs: List[QAPair], embed_fn, threshold: float = 0.93) ->
 # ---------------------------------------------------------------------
 
 def verify_pair(pair: QAPair, chunks: List[Chunk], chunk_embeddings: np.ndarray,
-                 embed_fn, generator: QAGenerator, retrieval_top_k: int = 3,
-                 similarity_threshold: float = 0.72, borderline_band: float = 0.08,
+                 embed_fn, generator: QAGenerator, retrieval_top_k: int = 6,
+                 similarity_threshold: float = 0.58, borderline_band: float = 0.12,
                  use_llm_judge: bool = True) -> bool:
     """Round-trip verify exactly ONE pair (the unit pipeline.py
     checkpoints on): retrieve top_k chunks for the question, get an
@@ -492,6 +492,17 @@ def verify_pair(pair: QAPair, chunks: List[Chunk], chunk_embeddings: np.ndarray,
         pair.verified = True
         pair.verification_method = pair.verification_method or "n/a (negative)"
         return True
+
+    # Broken local-model JSON often leaves the schema placeholder, an empty
+    # string, or a fragment as the answer. Reject it before spending a
+    # retrieval/embedding pass and, crucially, before it can look like a
+    # semantic-verification failure.
+    reference_answer = pair.reference_answer.strip()
+    if len(reference_answer) < 10 or reference_answer in {"...", "}", "{", "null", "None"}:
+        pair.verification_score = 0.0
+        pair.verification_method = "invalid_reference_answer"
+        pair.verified = False
+        return False
 
     q_emb = embed_fn([pair.question])[0].reshape(1, -1)
     sims = cosine_similarity(q_emb, chunk_embeddings)[0]
@@ -506,7 +517,7 @@ def verify_pair(pair: QAPair, chunks: List[Chunk], chunk_embeddings: np.ndarray,
         return False
 
     cand_emb = embed_fn([candidate_answer])[0].reshape(1, -1)
-    src_emb = embed_fn([pair.reference_answer])[0].reshape(1, -1)
+    src_emb = embed_fn([reference_answer])[0].reshape(1, -1)
     sim = float(cosine_similarity(cand_emb, src_emb)[0][0])
 
     decision = sim >= similarity_threshold
@@ -523,8 +534,8 @@ def verify_pair(pair: QAPair, chunks: List[Chunk], chunk_embeddings: np.ndarray,
 
 
 def round_trip_filter(pairs: List[QAPair], chunks: List[Chunk], chunk_embeddings: np.ndarray,
-                       embed_fn, generator: QAGenerator, retrieval_top_k: int = 3,
-                       similarity_threshold: float = 0.72, borderline_band: float = 0.08,
+                       embed_fn, generator: QAGenerator, retrieval_top_k: int = 6,
+                       similarity_threshold: float = 0.58, borderline_band: float = 0.12,
                        use_llm_judge: bool = True) -> tuple:
     """Batch convenience wrapper around verify_pair(), kept for
     compatibility / offline use. Returns (accepted, rejected)."""

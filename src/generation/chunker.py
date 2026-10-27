@@ -13,7 +13,6 @@ small overlap so no sentence gets cut mid-thought.
 from __future__ import annotations
 
 import re
-import uuid
 from dataclasses import dataclass, field
 from typing import List
 
@@ -126,7 +125,9 @@ def chunk_document(doc: Document, max_chunk_tokens: int = 300,
         pieces = _split_paragraph_to_budget(para, max_chunk_tokens, chunk_overlap_tokens)
         for piece in pieces:
             chunks.append(Chunk(
-                chunk_id=str(uuid.uuid4())[:8],
+                # Stable IDs are required for retrieval evaluation.  They use
+                # the same document/unit convention as src/chunking/chunker.py.
+                chunk_id=f"{doc.doc_id}::u{position}",
                 doc_id=doc.doc_id,
                 doc_title=doc.title,
                 section_path=stack,
