@@ -37,13 +37,18 @@ import sys
 import time
 from typing import Dict, List
 
-from config import Config
-import local_loader
-import chunker
-import clustering
-import qa_pairs as qap
-import checkpoint
-from generator import QAGenerator
+try:
+    from .config import Config
+    from . import checkpoint, chunker, clustering, local_loader, qa_pairs as qap
+    from .generator import QAGenerator
+except ImportError:  # pragma: no cover - direct script compatibility
+    from config import Config
+    import checkpoint
+    import chunker
+    import clustering
+    import local_loader
+    import qa_pairs as qap
+    from generator import QAGenerator
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("pipeline")

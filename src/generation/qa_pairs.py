@@ -60,10 +60,16 @@ from typing import Dict, Iterator, List, Optional, Tuple
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
-from chunker import Chunk
-from clustering import CrossClusterPair
-from generator import QAGenerator
-from taxonomy import TAXONOMY, MULTI_HOP_INSTRUCTION, UNANSWERABLE_INSTRUCTION, pick_applicable_types
+try:
+    from .chunker import Chunk
+    from .clustering import CrossClusterPair
+    from .generator import QAGenerator
+    from .taxonomy import TAXONOMY, MULTI_HOP_INSTRUCTION, UNANSWERABLE_INSTRUCTION, pick_applicable_types
+except ImportError:  # pragma: no cover - direct script compatibility
+    from chunker import Chunk
+    from clustering import CrossClusterPair
+    from generator import QAGenerator
+    from taxonomy import TAXONOMY, MULTI_HOP_INSTRUCTION, UNANSWERABLE_INSTRUCTION, pick_applicable_types
 
 logger = logging.getLogger(__name__)
 

@@ -24,6 +24,9 @@ class CheckpointWriter:
 
     def __init__(self, path: str):
         self.path = path
+        parent = os.path.dirname(os.path.abspath(path))
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         # "a" (append) mode is what makes resuming safe: re-running the
         # pipeline against the same output_path never clobbers what a
         # previous, interrupted run already wrote.

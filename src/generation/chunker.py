@@ -16,7 +16,10 @@ import re
 from dataclasses import dataclass, field
 from typing import List
 
-from local_loader import Document
+try:  # Supports both `python -m src.generation.pipeline` and direct script use.
+    from .local_loader import Document
+except ImportError:  # pragma: no cover - direct script compatibility
+    from local_loader import Document
 
 MD_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 # Heuristic for plain-text exports (e.g. Google Docs export) that have no

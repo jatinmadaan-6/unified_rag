@@ -19,7 +19,10 @@ import numpy as np
 from sklearn.cluster import KMeans
 from sklearn.metrics.pairwise import cosine_similarity
 
-from chunker import Chunk
+try:
+    from .chunker import Chunk
+except ImportError:  # pragma: no cover - direct script compatibility
+    from chunker import Chunk
 
 
 def embed_chunks(chunks: List[Chunk], model_name: str = "all-MiniLM-L6-v2") -> np.ndarray:

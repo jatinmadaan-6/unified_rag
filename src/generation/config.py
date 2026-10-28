@@ -20,8 +20,8 @@ from typing import Dict
 # ---------------------------------------------------------------------
 # Simple, top-level knobs — the things you actually need to change.
 # ---------------------------------------------------------------------
-DATA_FOLDER = "/content/drive/MyDrive/RAG_DATASET"
-OUTPUT_FILE = "qa_pairs.jsonl"
+DATA_FOLDER = "data/raw"
+OUTPUT_FILE = "data/evaluation/qa_pairs.jsonl"
 TARGET_QA_PAIRS = 600
 
 
@@ -122,7 +122,7 @@ class Config:
     # --- Output ---
     output_path: str = OUTPUT_FILE
     save_rejected: bool = True
-    rejected_output_path: str = "qa_pairs_rejected.jsonl"
+    rejected_output_path: str = "data/evaluation/qa_pairs_rejected.jsonl"
 
     def validate(self):
         import os

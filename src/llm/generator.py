@@ -4,7 +4,7 @@ import gc
 import time
 
 class LocalLLM:
-    def __init__(self, model_name: str = "Qwen/Qwen2.5-32B-Instruct", load_in_4bit: bool = True):
+    def __init__(self, model_name: str = "Qwen/Qwen2.5-3B-Instruct", load_in_4bit: bool = False):
         self.model_name = model_name
         self.stats = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "generation_seconds": 0.0}
         
@@ -76,7 +76,7 @@ class LocalLLM:
 # Global instance
 _llm_instance = None
 
-def get_llm(model_name: str = "Qwen/Qwen2.5-32B-Instruct", load_in_4bit: bool = True) -> LocalLLM:
+def get_llm(model_name: str = "Qwen/Qwen2.5-3B-Instruct", load_in_4bit: bool = False) -> LocalLLM:
     global _llm_instance
     if _llm_instance is None or _llm_instance.model_name != model_name:
         if _llm_instance is not None:

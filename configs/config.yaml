@@ -2,7 +2,7 @@
 model:
   llm:
     name: "Qwen/Qwen2.5-3B-Instruct"
-    load_in_4bit: false
+    load_in_4bit: true
     max_new_tokens: 512
     temperature: 0.1
 
@@ -21,11 +21,16 @@ chunking:
 retrieval:
   top_k: 10
   raptor:
-    # Local RAPTOR-style baseline: bottom-up summary nodes + collapsed-tree retrieval.
-    # It uses K-Means, not RAPTOR's original UMAP + GMM implementation.
-    branch_factor: 5
+    # Independent RAPTOR reproduction: UMAP + BIC-selected GMM, soft memberships,
+    # recursive summary embeddings, and collapsed-tree retrieval.
     max_levels: 3
     min_nodes_to_cluster: 8
+    max_clusters: 50
+    membership_threshold: 0.1
+    global_n_neighbors: 50
+    local_n_neighbors: 10
+    umap_n_components: 10
+    gmm_reg_covar: 0.000001
     retrieval_node_k: 10
     seed: 0
   hsg_rag:
